@@ -86,7 +86,7 @@ jobs:
         id: signing
         env:
           BASE64_CONTENT: ${{ secrets.SIGNING_RELEASE_STOREFILE }}
-          FILE_PATH: './android_signing_key'
+          FILE_PATH: '${{ github.workspace }}/android_signing_key'
         continue-on-error: true
         shell: bash
         run: |
