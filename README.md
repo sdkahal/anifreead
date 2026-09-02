@@ -1,6 +1,6 @@
 # animeko-noad
 
-[open-ani/animeko](https://github.com/open-ani/animeko) 的个人去广告构建（macOS aarch64）。
+[open-ani/animeko](https://github.com/open-ani/animeko) 的个人去广告构建（Android arm64-v8a）。
 
 **唯一修改**（见 [noad.patch](noad.patch)，2 个文件）：
 
@@ -20,13 +20,7 @@
 
 ## 安装
 
-从 Releases 下载 dmg 拖入 Applications。首次打开若提示「无法验证开发者」：
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Ani.app
-```
-
-或用 [`install-latest.sh`](install-latest.sh) 一步到位（需 `gh` CLI）。
+从 Releases 下载安装
 
 ## 许可
 
