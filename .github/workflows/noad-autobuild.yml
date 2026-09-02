@@ -82,6 +82,26 @@ jobs:
       - name: Set ABI to arm64-v8a
         run: echo "ani.android.abis=arm64-v8a" >> src/local.properties
 
+      - name: Prepare signing key
+        id: signing
+        env:
+          BASE64_CONTENT: ${{ secrets.SIGNING_RELEASE_STOREFILE }}
+          FILE_PATH: './android_signing_key'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE64_CONTENT:-}" ]; then
+            echo "SIGNING_RELEASE_STOREFILE is empty, will use debug keystore" >&2
+            exit 0
+          fi
+          mkdir -p "$(dirname "$FILE_PATH")"
+          if ! printf '%s' "$BASE64_CONTENT" | base64 --decode > "$FILE_PATH" 2>/dev/null; then
+            printf '%s' "$BASE64_CONTENT" | base64 -D > "$FILE_PATH"
+          fi
+          chmod 600 "$FILE_PATH"
+          echo "filePath=$FILE_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -97,6 +117,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Build Android arm64-v8a Release APK
+        env:
+          signing_release_storeFileFromRoot: ${{ steps.signing.outputs.filePath }}
+          signing_release_storePassword: ${{ secrets.SIGNING_RELEASE_STOREPASSWORD }}
+          signing_release_keyAlias: ${{ secrets.SIGNING_RELEASE_KEYALIAS }}
+          signing_release_keyPassword: ${{ secrets.SIGNING_RELEASE_KEYPASSWORD }}
         working-directory: src
         run: >
           ./gradlew assembleDefaultRelease
