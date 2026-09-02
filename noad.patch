@@ -1,20 +1,18 @@
-﻿From 3d53d6a199927719b55d75c2f4ea0d83d5c5292c Mon Sep 17 00:00:00 2001
+From 3d53d6a199927719b55d75c2f4ea0d83d5c5292c Mon Sep 17 00:00:00 2001
 From: vcxzvfe <91271000+vcxzvfe@users.noreply.github.com>
 Date: Fri, 10 Jul 2026 00:00:43 +0200
 Subject: [PATCH] =?UTF-8?q?fix:=20=E8=BF=87=E6=BB=A4=E6=92=AD=E6=94=BE?=
  =?UTF-8?q?=E9=A1=B5=E7=9B=B8=E5=85=B3=E6=8E=A8=E8=8D=90=E4=B8=AD=E6=9C=8D?=
  =?UTF-8?q?=E5=8A=A1=E5=99=A8=E4=B8=8B=E5=8F=91=E7=9A=84=E5=B9=BF=E5=91=8A?=
- =?UTF-8?q?=E5=B9=B6=E5=B0=86=E6=9B=B4=E6=96=B0=E6=8C=87=E5=90=91=E8=87=AA?=
- =?UTF-8?q?=E8=A1=8C=E6=9E=84=E5=BB=BA=E4=BB=93=E5=BA=93?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-api.animeko.org 的 /v2/subjects/{id}/recommendations 会混入 subjectId=-1、带外链 uri 的广告项, 与首页 RecommendationRepository 的既有过滤规则保持一致。同时将更新检查指向自建 fork 仓库 (sdkahal/anifreead) 的 GitHub Releases, 避免自动升级回官方包。
+api.animeko.org 的 /v2/subjects/{id}/recommendations 会混入 subjectId=-1、带外链 uri 的广告项, 与首页 RecommendationRepository 的既有过滤规则保持一致。同时禁用更新检查, 防止自编译版被官方包覆盖。
 ---
  .../domain/episode/GetSubjectRecommendationFlowUseCase.kt    | 5 ++++-
- .../src/commonMain/kotlin/ui/update/UpdateChecker.kt         | 71 +++++++++++++-----------
- 2 files changed, 45 insertions(+), 31 deletions(-)
+ .../src/commonMain/kotlin/ui/update/UpdateChecker.kt         | 5 +++++
+ 2 files changed, 9 insertions(+), 1 deletion(-)
 
 diff --git a/app/shared/app-data/src/commonMain/kotlin/domain/episode/GetSubjectRecommendationFlowUseCase.kt b/app/shared/app-data/src/commonMain/kotlin/domain/episode/GetSubjectRecommendationFlowUseCase.kt
 index c9a0f9f..58f5aff 100644
@@ -33,148 +31,27 @@ index c9a0f9f..58f5aff 100644
                  subjectId = it.subjectId,
                  name = it.subjectName,
 diff --git a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt
-index 6c07a74..4176778 100644
+index 6c07a74..51a62b5 100644
 --- a/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt
 +++ b/app/shared/ui-settings/src/commonMain/kotlin/ui/update/UpdateChecker.kt
-@@ -11,14 +11,14 @@ package me.him188.ani.app.ui.update
- 
- import io.ktor.client.HttpClient
- import io.ktor.client.request.get
--import io.ktor.client.request.parameter
-+import io.ktor.client.request.header
- import io.ktor.client.statement.bodyAsText
--import io.ktor.http.appendPathSegments
- import kotlinx.coroutines.CancellationException
- import kotlinx.io.IOException
-+import kotlinx.serialization.SerialName
-+import kotlinx.serialization.Serializable
- import kotlinx.serialization.json.Json
- import me.him188.ani.app.data.network.protocol.ReleaseClass
--import me.him188.ani.app.data.network.protocol.ReleaseUpdatesDetailedResponse
- import me.him188.ani.app.platform.currentAniBuildConfig
- import me.him188.ani.app.tools.TimeFormatter
- import me.him188.ani.utils.coroutines.withExceptionCollector
-@@ -26,7 +26,6 @@ import me.him188.ani.utils.ktor.getPlatformKtorEngine
- import me.him188.ani.utils.logging.error
- import me.him188.ani.utils.logging.info
- import me.him188.ani.utils.logging.logger
--import me.him188.ani.utils.platform.currentPlatform
+@@ -29,6 +29,9 @@ import me.him188.ani.utils.logging.logger
+ import me.him188.ani.utils.platform.currentPlatform
  
  class UpdateChecker {
++    // 自编译版本标记: true 时 checkLatestVersion 恒返回 "无新版本"
++    private val selfBuiltDisableUpdateCheck = true
++
      /**
-@@ -41,15 +40,10 @@ class UpdateChecker {
-         }.use { client ->
-             withExceptionCollector {
-                 return kotlin.runCatching {
--                    client.getVersionFromAniServer("https://danmaku-global.myani.org/", currentVersion, releaseClass)
-+                    client.getVersionFromGitHub("sdkahal", "anifreead", currentVersion)
-                         .also {
--                            logger.info { "Got latest version from global server: ${it?.name}" }
-+                            logger.info { "Got latest version from GitHub: ${it?.name}" }
-                         }
--                }.recoverCatching { exception ->
--                    collect(exception)
--                    client.getVersionFromAniServer("https://danmaku-cn.myani.org/", currentVersion, releaseClass).also {
--                        logger.info { "Got latest version from CN server: ${it?.name}" }
--                    }
-                 }.onFailure { exception ->
-                     collect(exception)
-                     if (exception is CancellationException || exception is IOException) {
-@@ -58,58 +52,52 @@ class UpdateChecker {
-                     val finalException = getLast()!!
-                     logger.error(finalException) { "Failed to get latest version" }
-                     throw finalException
--                }.getOrThrow()// should not throw, because of `onFailure`   
-+                }.getOrThrow()
-             }
-         }
-     }
- 
--    private suspend fun HttpClient.getVersionFromAniServer(
--        baseUrl: String,
--        currentVersion: String = currentAniBuildConfig.versionName,
--        releaseClass: ReleaseClass,
-+    private suspend fun HttpClient.getVersionFromGitHub(
-+        owner: String,
-+        repo: String,
-+        currentVersion: String,
+      * 检查是否有更新的版本. 返回最新版本的信息, 或者 `null` 表示没有新版本.
+      */
+@@ -36,6 +39,8 @@ class UpdateChecker {
+         releaseClass: ReleaseClass,
+         currentVersion: String = currentAniBuildConfig.versionName,
      ): NewVersion? {
--//        val versions = get(baseUrl) {
--//            url {
--//                appendPathSegments("v1/updates/incremental")
--//            }
--//            val platform = currentPlatform
--//            parameter("clientVersion", currentAniBuildConfig.versionName)
--//            parameter("clientArch", platform.arch.displayName)
--//            parameter("releaseClass", "beta")
--//        }.bodyAsChannel().toInputStream().use {
--//            json.decodeFromStream(UpdatesIncrementalResponse.serializer(), it)
--//        }.versions
--//
--//        val newestVersion = versions.lastOrNull() ?: return null
--        val updates = get(baseUrl) {
--            url {
--                appendPathSegments("v1/updates/incremental/details")
--            }
--            val platform = currentPlatform()
--            parameter("clientVersion", currentAniBuildConfig.versionName)
--            parameter("clientPlatform", platform.name.lowercase())
--            parameter("clientArch", platform.arch.displayName)
--            parameter("releaseClass", releaseClass.name)
--        }.bodyAsText().let {
--            json.decodeFromString(ReleaseUpdatesDetailedResponse.serializer(), it)
--        }.updates
-+        val text = get("https://api.github.com/repos/$owner/$repo/releases/latest") {
-+            header("Accept", "application/vnd.github+json")
-+        }.bodyAsText()
- 
--        if (updates.isEmpty()) {
--            return null
--        }
-+        val release = json.decodeFromString(GitHubRelease.serializer(), text)
- 
--        return updates.last().let { latest ->
--            NewVersion(
--                name = latest.version,
--                changelogs = updates.asReversed().asSequence().take(10).filter { it.version != currentVersion }.map {
--                    Changelog(it.version, formatTime(it.publishTime), it.description)
--                }.toList(),
--                downloadUrlAlternatives = latest.downloadUrlAlternatives,
--                publishedAt = formatTime(latest.publishTime),
--            )
--        }
-+        // tag_name 格式: "v5.7.1-noad" -> 提取 "5.7.1" 与 currentVersion 比较
-+        val latestVersion = release.tagName.removePrefix("v").removeSuffix("-noad")
-+        if (latestVersion == currentVersion) return null
-+
-+        return NewVersion(
-+            name = release.tagName,
-+            changelogs = listOf(
-+                Changelog(release.tagName, release.publishedAt, release.body ?: "")
-+            ),
-+            downloadUrlAlternatives = release.assets.map {
-+                DownloadUrlAlternative(it.name, it.browserDownloadUrl)
-+            },
-+            publishedAt = release.publishedAt,
-+        )
-     }
- 
-+    @Serializable
-+    private data class GitHubRelease(
-+        @SerialName("tag_name") val tagName: String,
-+        @SerialName("body") val body: String? = null,
-+        @SerialName("published_at") val publishedAt: String,
-+        @SerialName("assets") val assets: List<GitHubAsset> = emptyList(),
-+    )
-+
-+    @Serializable
-+    private data class GitHubAsset(
-+        @SerialName("name") val name: String,
-+        @SerialName("browser_download_url") val browserDownloadUrl: String,
-+    )
-+
-     private companion object {
-         private val logger = logger<UpdateChecker>()
-         private val json = Json {
++        // 自编译版本: 禁用更新检查, 避免升级回官方包 (更新请从源码重新构建)
++        if (selfBuiltDisableUpdateCheck) return null
+         HttpClient(getPlatformKtorEngine()) {
+             expectSuccess = true
+         }.use { client ->
 -- 
 2.50.1 (Apple Git-155)
