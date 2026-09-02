@@ -4,7 +4,7 @@ name: noad autobuild
 # 拉 tag -> 套 noad.patch(过滤广告+重定向更新检查) -> 构建 Android arm64-v8a APK -> 发布到本仓库 releases
 on:
   schedule:
-    - cron: '17 2,8,14,20 * * *'
+    - cron: '0 0 * * 0'
   workflow_dispatch:
     inputs:
       tag:
