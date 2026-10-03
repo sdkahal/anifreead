@@ -1,7 +1,5 @@
 name: noad autobuild
 
-# 定时检查上游 open-ani/animeko 的最新 release；有新版则:
-# 拉 tag -> 套 noad.patch(过滤广告+重定向更新检查) -> 构建 Android arm64-v8a APK -> 发布到本仓库 releases
 on:
   schedule:
     - cron: '0 0 * * 0'
@@ -45,7 +43,7 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-  build:
+  build-android:
     needs: check
     if: needs.check.outputs.build == 'true'
     runs-on: ubuntu-24.04
@@ -137,15 +135,118 @@ jobs:
           mv "$APK" "$OUT"
           echo "OUT=$OUT" >> "$GITHUB_ENV"
 
-      - name: Create release
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: ani-*-noad-android-arm64-v8a.apk
+
+  build-windows:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 150
+    env:
+      TAG: ${{ needs.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone upstream tag
+        shell: bash
+        run: git clone --depth 1 --branch "$TAG" "https://github.com/$UPSTREAM.git" src
+
+      - name: Apply noad patch and align version
+        shell: bash
+        run: |
+          set -eu
+          cd src
+          git apply --stat --apply ../noad.patch
+          VER="${TAG#v}"
+          sed -i "s/^version.name=.*/version.name=$VER/; s/^package.version=.*/package.version=$VER/" gradle.properties
+          grep -E '^(version.name|package.version)' gradle.properties
+
+      - name: Inject dandanplay keys (optional)
+        shell: bash
+        env:
+          DDP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DDP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: |
+          if [ -n "$DDP_ID" ]; then
+            printf 'ani.dandanplay.app.id=%s\nani.dandanplay.app.secret=%s\n' "$DDP_ID" "$DDP_SECRET" >> src/local.properties
+            echo "dandanplay keys injected"
+          else
+            echo "::warning::未配置 DANDANPLAY_APP_ID/SECRET secrets, 此构建的弹弹play弹幕源不可用"
+          fi
+
+      - name: Set target ABI
+        shell: bash
+        run: echo "ani.desktop.abis=x86_64" >> src/local.properties
+
+      - name: Set up JBR 21 (JCEF, Windows x64)
+        shell: bash
+        run: |
+          curl -fsSL --retry 3 -o jbr.zip "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.11-windows-x64-b1163.116.tar.gz"
+          mkdir jbr && tar -xzf jbr.zip -C jbr --strip-components 1
+          echo "JAVA_HOME=$PWD/jbr" >> "$GITHUB_ENV"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Windows x86_64 App
+        working-directory: src
+        run: |
+          .\gradlew.bat packageReleaseDistributionForCurrentOS --stacktrace "-Dorg.gradle.jvmargs=-Xmx4g"
+
+      - name: Compress and Collect Artifact
+        shell: bash
+        run: |
+          set -eu
+          VER="${TAG#v}"
+          OUT="ani-${VER}-noad-windows-x86_64.zip"
+          
+          # 寻找到 Compose 打包输出的目录并压缩为 zip
+          DIST_DIR=$(find src/app/desktop/build/compose/binaries/main -maxdepth 2 -type d -name "app" -o -name "image" -o -name "*app*" | head -n 1)
+          
+          if [ -z "$DIST_DIR" ]; then
+            # 兜底：如果直接输出了安装包或可执行文件
+            DIST_DIR="src/app/desktop/build/compose/binaries/main"
+          fi
+
+          7z a "$OUT" "./$DIST_DIR/*"
+          echo "Created package $OUT"
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: ani-*-noad-windows-x86_64.zip
+
+  release:
+    needs: [check, build-android, build-windows]
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.check.outputs.tag }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           {
             echo "基于官方 [${TAG}](https://github.com/open-ani/animeko/releases/tag/${TAG})。唯一修改见 [noad.patch](https://github.com/${{ github.repository }}/blob/noad-ci/noad.patch)：过滤播放页「相关推荐」中服务器下发的广告项，并将更新检查指向本仓库 releases。"
             echo ""
-            echo "安装：下载 APK 后直接安装。"
+            echo "安装与使用："
+            echo "- Android: 下载 APK 后直接安装。"
+            echo "- Windows: 下载 ZIP 压缩包解压后直接运行主程序。"
             echo ""
             echo "依据 AGPL-3.0 分发；完整对应源码 = 上游 ${TAG} tag + 本仓库 noad.patch。"
           } > notes.md
-          gh release create "${TAG}-noad" "$OUT" --title "Ani ${TAG} 去广告版 (Android arm64-v8a)" --notes-file notes.md
+
+          gh release create "${TAG}-noad" ./artifacts/* \
+            --title "Ani ${TAG} 去广告版 (Android & Windows)" \
+            --notes-file notes.md
