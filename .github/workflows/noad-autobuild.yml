@@ -125,7 +125,6 @@ jobs:
           ./gradlew assembleDefaultRelease
           --stacktrace
           "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g"
-          "-Dkotlin.daemon.jvm.options=-Xmx4g"
 
       - name: Collect artifact
         run: |
@@ -178,10 +177,6 @@ jobs:
             echo "::warning::未配置 DANDANPLAY_APP_ID/SECRET secrets, 此构建的弹弹play弹幕源不可用"
           fi
 
-      - name: Set target ABI
-        shell: bash
-        run: echo "ani.desktop.abis=x86_64" >> src/local.properties
-
       - name: Set up JBR 21 (JCEF, Windows x64)
         shell: bash
         run: |
@@ -192,28 +187,41 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build Windows x86_64 App
+      - name: Build Windows x86_64 distribution
         working-directory: src
-        run: |
-          .\gradlew.bat packageReleaseDistributionForCurrentOS --stacktrace "-Dorg.gradle.jvmargs=-Xmx4g"
+        run: .\gradlew.bat createReleaseDistributable --stacktrace "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.daemon.jvm.options=-Xmx4g"
 
       - name: Compress and Collect Artifact
         shell: bash
         run: |
           set -eu
+
           VER="${TAG#v}"
           OUT="ani-${VER}-noad-windows-x86_64.zip"
-          
-          # 寻找到 Compose 打包输出的目录并压缩为 zip
-          DIST_DIR=$(find src/app/desktop/build/compose/binaries/main -maxdepth 2 -type d -name "app" -o -name "image" -o -name "*app*" | head -n 1)
-          
-          if [ -z "$DIST_DIR" ]; then
-            # 兜底：如果直接输出了安装包或可执行文件
-            DIST_DIR="src/app/desktop/build/compose/binaries/main"
+          OUT_PATH="$PWD/$OUT"
+
+          EXE=$(find src/app/desktop/build \
+            -type f \
+            -iname "Ani.exe" \
+            | head -n 1)
+
+          if [ -z "$EXE" ]; then
+            echo "::error::Ani.exe not found"
+            echo "=== build tree ==="
+            find src/app/desktop/build -maxdepth 6 -print
+            exit 1
           fi
 
-          7z a "$OUT" "./$DIST_DIR/*"
-          echo "Created package $OUT"
+          DIST_DIR=$(dirname "$EXE")
+
+          echo "Windows distribution: $DIST_DIR"
+
+          (
+            cd "$DIST_DIR"
+            7z a "$OUT_PATH" ./*
+          )
+
+          echo "Created package: $OUT"
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
