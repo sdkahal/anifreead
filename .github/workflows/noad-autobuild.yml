@@ -185,9 +185,10 @@ jobs:
       - name: Set up JBR 21 (JCEF, Windows x64)
         shell: bash
         run: |
-          curl -fsSL --retry 3 -o jbr.zip "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.11-windows-x64-b1163.116.tar.gz"
-          mkdir jbr && tar -xzf jbr.zip -C jbr --strip-components 1
-          echo "JAVA_HOME=$PWD/jbr" >> "$GITHUB_ENV"
+          curl -fsSL --retry 3 -o jbr.tar.gz "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-21.0.11-windows-x64-b1163.116.tar.gz"
+          mkdir jbr && tar -xzf jbr.tar.gz -C jbr --strip-components 1
+          WIN_JAVA_HOME=$(cygpath -w "$PWD/jbr")
+          echo "JAVA_HOME=$WIN_JAVA_HOME" >> "$GITHUB_ENV"
 
       - uses: gradle/actions/setup-gradle@v4
 
