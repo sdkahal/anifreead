@@ -1,6 +1,6 @@
 # animeko-noad
 
-[open-ani/animeko](https://github.com/open-ani/animeko) 的个人去广告构建（Android arm64-v8a）。
+[open-ani/animeko](https://github.com/open-ani/animeko) 的个人去广告构建（`Android arm64-v8a` `Windows x86-64`）。
 
 **唯一修改**（见 [noad.patch](noad.patch)，2 个文件）：
 
