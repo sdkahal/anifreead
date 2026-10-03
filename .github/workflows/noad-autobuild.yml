@@ -236,6 +236,8 @@ jobs:
     env:
       TAG: ${{ needs.check.outputs.tag }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
